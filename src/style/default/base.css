@@ -1,0 +1,11 @@
+@import '../../../node_modules/reset-css/reset.css';
+@import './fonts.css';
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    font-family: 'MoscowSans', sans-serif;
+}
