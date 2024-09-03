@@ -1,21 +1,3 @@
-// export default {
-//     root: 'src/',
-//     publicDir: '../static/',
-//     base: './',
-//     server:
-//     {
-//         host: true, // Open to local network and display URL
-//         open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env) // Open if it's not a CodeSandbox
-//     },
-//     build:
-//     {
-//         outDir: '../dist', // Output in the dist/ folder
-//         emptyOutDir: true, // Empty the folder first
-//         sourcemap: true // Add sourcemap
-//     },
-// }
-
-
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -32,11 +14,7 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       input: {
-        main: 'src/index.html',
-        police: 'src/police.html',
-        muslCar: 'src/muslCar.html',
-        moto: 'src/moto.html',
-        // pageAR: 'src/pageAR.html'
+        main: 'src/index.html'
       },
       output: {
         assetFileNames: (assetInfo) => {
