@@ -9,3 +9,6 @@ body {
     overflow: hidden;
     font-family: 'MoscowSans', sans-serif;
 }
+#root{
+    height: 100vh;
+}
