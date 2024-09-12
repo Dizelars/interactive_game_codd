@@ -2,11 +2,9 @@ import React, { useRef, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   CameraControls,
-  Fisheye,
   PerspectiveCamera,
   Stats,
   useGLTF,
-  Line,
 } from '@react-three/drei'
 import { useErrorBoundary } from 'use-error-boundary'
 import * as THREE from 'three'
@@ -20,27 +18,48 @@ const SetupToneMapping = () => {
   return null
 }
 
+class Loader {
+  constructor() {
+    this.models = {}
+  }
+  load(url = '') {
+    if (url.length == 0) return
+    if (Array.isArray(url)) {
+      url.map((item) => {
+        this.models[item] = useGLTF(url)
+      })
+    } else this.models[url] = useGLTF(url)
+  }
+  get(url = '') {
+    if (url.length == 0 && !this.isLoaded(url))
+      return { nodes: {}, materials: {} }
+    if (this.isLoaded(url)) return this.models[url]
+    else this.load(url)
+    return this.models[url]
+  }
+  isLoaded(url = '') {
+    if (url.length == 0) return
+    return !!this.models[url]
+  }
+}
+
 class Navigator {
   constructor() {
     this.points = []
     this.graph = []
     this.edges = []
   }
-  generateRandomRoute() {
+  getRandomEdgePoint = () => {
     const getRandomNum = (max, min = 0) => Math.random() * (max - min) + min
-    const getRandomIndex = (max) => Math.floor(getRandomNum(max))
-    const getRandomEdgePoint = (edgePoint) => {
-      const randomIndex = getRandomIndex(this.edges.length)
-      return this.edges[randomIndex][edgePoint]
-    }
-    const randomStartPoint = getRandomEdgePoint('pointA')
-    const randomEndPoint = getRandomEdgePoint('pointB')
-
+    return this.edges[Math.floor(getRandomNum(this.edges.length))]
+  }
+  generateRandomRoute() {
+    const randomStartPoint = this.getRandomEdgePoint().pointA
+    const randomEndPoint = this.getRandomEdgePoint().pointB
     const result = this.dijkstra(
       this.serializePoint({ x: randomStartPoint.xW, y: randomStartPoint.yW }),
       this.serializePoint({ x: randomEndPoint.xW, y: randomEndPoint.yW })
     )
-    console.log(result)
 
     if (result.path.length > 5) {
       this.lastPoint = randomEndPoint
@@ -549,7 +568,7 @@ class Road {
       (this.blocked = blocked)
   }
   create(key) {
-    const { nodes, materials } = useGLTF(
+    const { nodes, materials } = loader.get(
       `/assets/Roads/${this.listOfTypes[this.type].url}.gltf`
     )
     const points = this.listOfTypes[this.type].points
@@ -590,7 +609,7 @@ class Road {
           material={materials.Mat}
           scale={0.07}
         />
-        {this.debug()}
+        {this.debug(false)}
       </group>
     )
   }
@@ -629,21 +648,22 @@ class Car {
       (this.curveRefOld = useRef()),
       (this.navigator = navigator),
       (this.canMove = true),
-      (this.showTrace = false)
+      (this.showTrace = false),
+      (this.lastPoint = undefined)
   }
   create() {
     const frameCountRef = useRef(0)
-    const n = 1 // Выполнять функцию каждые n кадров
+    const n = 2 // Выполнять функцию каждые n кадров
 
     useFrame(() => {
-      frameCountRef.current += 1 // Увеличиваем счётчик кадров
-
-      // Проверяем, если текущий кадр кратен n
+      frameCountRef.current += 1
       if (frameCountRef.current % n === 0) {
-        this.move() // Выполняем функцию
+        this.move()
       }
     })
-    const { nodes, materials } = useGLTF('/assets/Vehicles/Truck_2.gltf')
+    const model = Math.random() < 0.5 ? 'Truck_2' : 'Car_2_1'
+
+    const { nodes, materials } = loader.get(`/assets/Vehicles/${model}.gltf`)
 
     return (
       <>
@@ -652,7 +672,7 @@ class Car {
             rotation={[0, Math.PI / 2, 0]}
             castShadow
             receiveShadow
-            geometry={nodes.Truck_2.geometry}
+            geometry={nodes[model].geometry}
             material={materials.Mat}
             scale={0.07}
           >
@@ -682,13 +702,18 @@ class Car {
   move() {
     if (this.ref.current && this.curve && this.canMove) {
       this.progress += 0.001
-
-      // Сброс прогресса и генерация нового маршрута, если он превышает 1
-      if (this.progress > 1) {
-        this.curve = this.navigator.generateRoute()
+      const getPath = () => {
+        if (this.lastPoint) {
+          const pointA = { x: this.lastPoint.x, y: this.lastPoint.z }
+          const generatedB = this.navigator.getRandomEdgePoint().pointB
+          const pointB = { x: generatedB.xW, y: generatedB.yW }
+          this.curve = this.navigator.generateRoute(pointA, pointB).curve
+        } else this.curve = this.navigator.generateRoute().curve
         this.progress = 0.001
+        if (this.curve.points.length > 0)
+          this.lastPoint = this.curve.getPoint(1)
       }
-
+      if (this.progress > 1) getPath()
       const updateCurveGeometry = (ref, points) => {
         if (points.length > 1 && this.showTrace) {
           const curve = new THREE.CatmullRomCurve3(points)
@@ -705,41 +730,32 @@ class Car {
           )
         }
       }
-
-      const numPoints = this.curve.curve.points.length
+      const numPoints = this.curve.points.length
       const progressRatio = this.progress * numPoints
-
-      // Обновление кривых и геометрии, если точек больше 10
       if (numPoints > 10) {
-        const point = this.curve.curve.getPoint(this.progress)
+        const point = this.curve.getPoint(this.progress)
         const threshold = Math.floor(progressRatio)
-
-        // Разделение точек на oldCurve и newCurve
-        const oldCurve = this.curve.curve.points.slice(0, threshold)
-        const newCurve = this.curve.curve.points.slice(threshold)
-
-        // Обновление геометрий oldCurve и newCurve
+        const oldCurve = this.curve.points.slice(0, threshold)
+        const newCurve = this.curve.points.slice(threshold)
         updateCurveGeometry(this.curveRef.current, oldCurve)
         updateCurveGeometry(this.curveRefOld.current, newCurve)
-
-        // Обновление позиции и ориентации объекта
-        const nextPoint = this.curve.curve.getPoint(
+        const nextPoint = this.curve.getPoint(
           Math.min(this.progress + 0.001, 1)
-        ) // Убедитесь, что не выходим за границы
+        )
         nextPoint.y = 0
         this.ref.current.position.set(point.x, 0, point.z)
         this.ref.current.lookAt(nextPoint)
       } else {
-        // Перегенерация маршрута, если точек недостаточно
-        this.curve = this.navigator.generateRoute()
-        this.progress = 0.001
+        getPath()
       }
     }
   }
 }
+const loader = new Loader()
 const Scene = () => {
   const sceneRef = useRef()
   const cars = []
+  const roads = []
   let edgesRef = useRef([])
   const navigator = new Navigator()
   cars.push(
@@ -768,16 +784,9 @@ const Scene = () => {
     new Car(navigator),
     new Car(navigator),
     new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
     new Car(navigator)
   )
-  const roads = []
+  console.log(cars.length)
   roads.push(
     new Road({ type: 1, x: 0, y: 0, blocked: [] }), //
     new Road({ type: 1, x: 6.44, y: 0, blocked: [0, 1, 2, 3] }), //
@@ -890,37 +899,37 @@ const Scene = () => {
       edgesRef.current.push(...navigator.edges)
     }
   }, [])
-  useEffect(() => {
-    if (sceneRef.current) {
-      edgesRef.current.forEach((edge) => {
-        const path = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
-          new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
-        ])
+  // useEffect(() => {
+  //   if (sceneRef.current) {
+  //     edgesRef.current.forEach((edge) => {
+  //       const path = new THREE.CatmullRomCurve3([
+  //         new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
+  //         new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
+  //       ])
 
-        const geometry = new THREE.TubeGeometry(path, 10, 0.02, 3, false)
+  //       const geometry = new THREE.TubeGeometry(path, 10, 0.02, 3, false)
 
-        // Определите цвет в зависимости от направления
-        let color
-        if (edge.direction === 'AtoB') {
-          color = new THREE.Color('blue') // Цвет для направления от A к B
-        } else if (edge.direction === 'BtoA') {
-          color = new THREE.Color('red') // Цвет для направления от B к A
-        } else {
-          color = new THREE.Color('black') // Цвет по умолчанию
-        }
+  //       // Определите цвет в зависимости от направления
+  //       let color
+  //       if (edge.direction === 'AtoB') {
+  //         color = new THREE.Color('blue') // Цвет для направления от A к B
+  //       } else if (edge.direction === 'BtoA') {
+  //         color = new THREE.Color('red') // Цвет для направления от B к A
+  //       } else {
+  //         color = new THREE.Color('black') // Цвет по умолчанию
+  //       }
 
-        const material = new THREE.MeshBasicMaterial({
-          color: color,
-          side: THREE.DoubleSide,
-        })
+  //       const material = new THREE.MeshBasicMaterial({
+  //         color: color,
+  //         side: THREE.DoubleSide,
+  //       })
 
-        const tube = new THREE.Mesh(geometry, material)
+  //       const tube = new THREE.Mesh(geometry, material)
 
-        sceneRef.current.add(tube)
-      })
-    }
-  }, [edgesRef.current])
+  //       sceneRef.current.add(tube)
+  //     })
+  //   }
+  // }, [edgesRef.current])
   return (
     <group ref={sceneRef}>
       {cars.map((car, index) => (
@@ -939,32 +948,30 @@ const App = () => {
   ) : (
     <ErrorBoundary>
       <Canvas shadowmap="true" flat dpr={[4, 6]}>
-        <Fisheye zoom={0}>
-          <color attach="background" args={['lightblue']} />
-          <SetupToneMapping />
-          <axesHelper />
-          <CameraControls
-            // minPolarAngle={Math.PI / 5}
-            // maxPolarAngle={Math.PI / 2.3}
-            minDistance={2}
-            maxDistance={15}
-          />
-          <ambientLight intensity={1} />
-          <hemisphereLight
-            skyColor={0xffffff}
-            groundColor={0x444444}
-            intensity={1.5}
-          />
-          <pointLight position={[5, 5, 5]} intensity={1.5} decay={2} />
-          <pointLight position={[-5, 5, 5]} intensity={1.5} decay={2} />
-          <pointLight position={[5, 5, -5]} intensity={1.5} decay={2} />
-          <pointLight position={[-5, 5, -5]} intensity={1.5} decay={2} />
-          <group scale={1} position={[0, 0, 0]}>
-            <Scene />
-            <Stats />
-          </group>
-          <PerspectiveCamera makeDefault position={[0, 2, 3]} />
-        </Fisheye>
+        <color attach="background" args={['lightblue']} />
+        <SetupToneMapping />
+        <axesHelper />
+        <CameraControls
+          minPolarAngle={Math.PI / 5}
+          maxPolarAngle={Math.PI / 2.3}
+          minDistance={2}
+          maxDistance={15}
+        />
+        <ambientLight intensity={1} />
+        <hemisphereLight
+          skyColor={0xffffff}
+          groundColor={0x444444}
+          intensity={1.5}
+        />
+        <pointLight position={[5, 5, 5]} intensity={1.5} decay={2} />
+        <pointLight position={[-5, 5, 5]} intensity={1.5} decay={2} />
+        <pointLight position={[5, 5, -5]} intensity={1.5} decay={2} />
+        <pointLight position={[-5, 5, -5]} intensity={1.5} decay={2} />
+        <group scale={1} position={[0, 0, 0]}>
+          <Scene />
+          <Stats />
+        </group>
+        <PerspectiveCamera makeDefault position={[0, 2, 3]} />
       </Canvas>
     </ErrorBoundary>
   )
