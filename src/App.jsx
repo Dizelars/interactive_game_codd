@@ -33,7 +33,7 @@ class Navigator {
       const randomIndex = getRandomIndex(this.edges.length)
       return this.edges[randomIndex][edgePoint]
     }
-    const randomStartPoint = this.lastPoint || getRandomEdgePoint('pointA')
+    const randomStartPoint = getRandomEdgePoint('pointA')
     const randomEndPoint = getRandomEdgePoint('pointB')
 
     const result = this.dijkstra(
@@ -65,7 +65,7 @@ class Navigator {
       )
       console.log(result)
 
-      if (result.path.length > 2) {
+      if (result.path.length > 1) {
         const curvePoints = result.path.map(
           (point) => new THREE.Vector3(point.x, 0, point.y)
         )
@@ -186,6 +186,7 @@ class Navigator {
     }
 
     lines = removeDublicates(lines)
+
     const updateDirections = (lines, startLine, direction) => {
       const stack = [startLine] // Используем стек для обхода графа
       const visited = new Set() // Чтобы не посещать одно и то же ребро несколько раз
@@ -219,7 +220,6 @@ class Navigator {
         }
       }
     }
-
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
 
@@ -345,14 +345,14 @@ class Navigator {
 }
 
 class Road {
-  constructor({ x = 0, y = 0, type = 0, points = [], r = 0 }) {
+  constructor({ x = 0, y = 0, type = 0, blocked = [], r = 0 }) {
     ;(this.coordinates = {
       x,
       y,
       r,
     }),
       (this.ref = useRef()),
-      (this.points = points),
+      (this.points = []),
       (this.type = type),
       (this.listOfTypes = [
         {
@@ -545,12 +545,33 @@ class Road {
           ],
           url: 'Road_Crossroads_1',
         },
-      ])
+      ]),
+      (this.blocked = blocked)
   }
   create(key) {
     const { nodes, materials } = useGLTF(
       `/assets/Roads/${this.listOfTypes[this.type].url}.gltf`
     )
+    const points = this.listOfTypes[this.type].points
+    for (let i = 0; i < points.length; i++) {
+      if (this.blocked.findIndex((block) => block == i) != -1) continue
+      const point = points[i]
+      if (this.coordinates.r == 2) {
+        this.listOfTypes[this.type].points[i].xW =
+          Math.round((point.y + this.coordinates.x) * 1000) / 1000
+        this.listOfTypes[this.type].points[i].yW =
+          Math.round((point.x + this.coordinates.y) * 1000) / 1000
+        this.listOfTypes[this.type].points[i].r = this.coordinates.r
+      } else {
+        this.listOfTypes[this.type].points[i].xW =
+          Math.round((point.x + this.coordinates.x) * 1000) / 1000
+        this.listOfTypes[this.type].points[i].yW =
+          Math.round((point.y + this.coordinates.y) * 1000) / 1000
+      }
+      this.listOfTypes[this.type].points[i].index = i
+      this.points.push(this.listOfTypes[this.type].points[i])
+    }
+
     return (
       <group
         ref={this.ref}
@@ -569,28 +590,14 @@ class Road {
           material={materials.Mat}
           scale={0.07}
         />
-        {this.debug(false)}
+        {this.debug()}
       </group>
     )
   }
   debug(show = true) {
     return this.listOfTypes[this.type].points.map((point, index) => {
       const color = !point.direction ? '#a83232' : '#32a852'
-      if (this.coordinates.r == 2) {
-        this.listOfTypes[this.type].points[index].xW =
-          Math.round((point.y + this.coordinates.x) * 1000) / 1000
-        this.listOfTypes[this.type].points[index].yW =
-          Math.round((point.x + this.coordinates.y) * 1000) / 1000
-        this.listOfTypes[this.type].points[index].r = this.coordinates.r
-      } else {
-        this.listOfTypes[this.type].points[index].xW =
-          Math.round((point.x + this.coordinates.x) * 1000) / 1000
-        this.listOfTypes[this.type].points[index].yW =
-          Math.round((point.y + this.coordinates.y) * 1000) / 1000
-      }
-      this.listOfTypes[this.type].points[index].index = index
-      this.points.push(this.listOfTypes[this.type].points[index])
-      if (show)
+      if (this.blocked.findIndex((block) => block == index) == -1 && show)
         return (
           <mesh
             key={index}
@@ -621,11 +628,20 @@ class Car {
       (this.curveRef = useRef()),
       (this.curveRefOld = useRef()),
       (this.navigator = navigator),
-      (this.canMove = true)
+      (this.canMove = true),
+      (this.showTrace = false)
   }
   create() {
+    const frameCountRef = useRef(0)
+    const n = 1 // Выполнять функцию каждые n кадров
+
     useFrame(() => {
-      this.move()
+      frameCountRef.current += 1 // Увеличиваем счётчик кадров
+
+      // Проверяем, если текущий кадр кратен n
+      if (frameCountRef.current % n === 0) {
+        this.move() // Выполняем функцию
+      }
     })
     const { nodes, materials } = useGLTF('/assets/Vehicles/Truck_2.gltf')
 
@@ -654,11 +670,11 @@ class Car {
         </group>
         <mesh ref={this.curveRef}>
           <bufferGeometry />
-          <meshStandardMaterial color={'#000917'} transparent opacity={0.8} />
+          <meshStandardMaterial color={'#000917'} />
         </mesh>
         <mesh ref={this.curveRefOld}>
           <bufferGeometry />
-          <meshStandardMaterial color={'#003180'} transparent opacity={0.8} />
+          <meshStandardMaterial color={'#003180'} />
         </mesh>
       </>
     )
@@ -674,7 +690,7 @@ class Car {
       }
 
       const updateCurveGeometry = (ref, points) => {
-        if (points.length > 1) {
+        if (points.length > 1 && this.showTrace) {
           const curve = new THREE.CatmullRomCurve3(points)
           // Убедитесь, что вы переиспользуете старую геометрию, если это возможно
           if (ref.geometry) {
@@ -682,9 +698,9 @@ class Car {
           }
           ref.geometry = new THREE.TubeGeometry(
             curve,
-            Math.max(points.length * 2, 8), // Убедитесь, что количество сегментов не слишком велико
+            Math.round(points.length / 4),
             0.025,
-            6,
+            3,
             false
           )
         }
@@ -726,18 +742,72 @@ const Scene = () => {
   const cars = []
   let edgesRef = useRef([])
   const navigator = new Navigator()
-  cars.push(new Car(navigator))
+  cars.push(
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator),
+    new Car(navigator)
+  )
   const roads = []
   roads.push(
-    new Road({ type: 1, x: 0, y: 0 }), //
-    new Road({ type: 1, x: 6.44, y: 0 }), //
-    new Road({ type: 1, x: -6.44, y: 0 }),
-    new Road({ type: 1, x: 0, y: 6.44 }), //
-    new Road({ type: 1, x: 0, y: -6.44 }),
-    new Road({ type: 1, x: 6.44, y: 6.44 }), //
-    new Road({ type: 1, x: -6.44, y: 6.44 }),
-    new Road({ type: 1, x: -6.44, y: -6.44 }),
-    new Road({ type: 1, x: 6.44, y: -6.44 }),
+    new Road({ type: 1, x: 0, y: 0, blocked: [] }), //
+    new Road({ type: 1, x: 6.44, y: 0, blocked: [0, 1, 2, 3] }), //
+    new Road({ type: 1, x: -6.44, y: 0, blocked: [4, 5, 6, 7] }),
+    new Road({ type: 1, x: 0, y: 6.44, blocked: [8, 9, 10, 11] }), //
+    new Road({ type: 1, x: 0, y: -6.44, blocked: [12, 13, 14, 15] }),
+    new Road({
+      type: 1,
+      x: 6.44,
+      y: 6.44,
+      blocked: [8, 9, 10, 11, 0, 1, 2, 3, 26, 21, 17, 16, 27, 18, 19, 4, 25],
+    }), //
+    new Road({
+      type: 1,
+      x: -6.44,
+      y: 6.44,
+      blocked: [4, 5, 6, 7, 8, 9, 10, 11, 23, 24, 25, 22, 19, 18, 16, 17, 14],
+    }),
+    new Road({
+      type: 1,
+      x: -6.44,
+      y: -6.44,
+      blocked: [12, 13, 14, 15, 6, 7, 5, 4, 21, 25, 26, 19, 20, 22, 23, 24, 2],
+    }),
+    new Road({
+      type: 1,
+      x: 6.44,
+      y: -6.44,
+      blocked: [0, 1, 2, 3, 12, 13, 14, 15, 20, 21, 22, 23, 27, 26, 16, 17, 8],
+    }),
     new Road({ type: 0, x: 0, y: 1.82 }), //
     new Road({ type: 0, x: 0, y: 2.52 }), //
     new Road({ type: 0, x: 0, y: 3.22 }), //
@@ -766,7 +836,7 @@ const Scene = () => {
     new Road({ type: 0, x: 6.44, y: -2.52 }),
     new Road({ type: 0, x: 6.44, y: -3.22 }),
     new Road({ type: 0, x: 6.44, y: -3.92 }),
-    new Road({ type: 0, x: 6.44, y: -4.62 }),
+    new Road({ type: 0, x: 6.44, y: -4.62, blocked: [0] }),
 
     new Road({ type: 0, x: 6.44, y: 1.82 }), //
     new Road({ type: 0, x: 6.44, y: 2.52 }), //
@@ -784,7 +854,7 @@ const Scene = () => {
     new Road({ type: 0, x: -6.44, y: 2.52 }),
     new Road({ type: 0, x: -6.44, y: 3.22 }),
     new Road({ type: 0, x: -6.44, y: 3.92 }),
-    new Road({ type: 0, x: -6.44, y: 4.62 }),
+    new Road({ type: 0, x: -6.44, y: 4.62, blocked: [2] }),
 
     new Road({ type: 0, x: -1.82, y: 6.44, r: 2 }),
     new Road({ type: 0, x: -2.52, y: 6.44, r: 2 }),
@@ -796,13 +866,13 @@ const Scene = () => {
     new Road({ type: 0, x: 2.52, y: 6.44, r: 2 }), //
     new Road({ type: 0, x: 3.22, y: 6.44, r: 2 }), //
     new Road({ type: 0, x: 3.92, y: 6.44, r: 2 }), //
-    new Road({ type: 0, x: 4.62, y: 6.44, r: 2 }), //
+    new Road({ type: 0, x: 4.62, y: 6.44, r: 2, blocked: [0] }), //
 
     new Road({ type: 0, x: -1.82, y: -6.44, r: 2 }),
     new Road({ type: 0, x: -2.52, y: -6.44, r: 2 }),
     new Road({ type: 0, x: -3.22, y: -6.44, r: 2 }),
     new Road({ type: 0, x: -3.92, y: -6.44, r: 2 }),
-    new Road({ type: 0, x: -4.62, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: -4.62, y: -6.44, r: 2, blocked: [2] }),
 
     new Road({ type: 0, x: 1.82, y: -6.44, r: 2 }),
     new Road({ type: 0, x: 2.52, y: -6.44, r: 2 }),
@@ -820,40 +890,42 @@ const Scene = () => {
       edgesRef.current.push(...navigator.edges)
     }
   }, [])
-  // useEffect(() => {
-  //   if (sceneRef.current) {
-  //     edgesRef.current.forEach((edge) => {
-  //       const path = new THREE.CatmullRomCurve3([
-  //         new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
-  //         new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
-  //       ])
+  useEffect(() => {
+    if (sceneRef.current) {
+      edgesRef.current.forEach((edge) => {
+        const path = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
+          new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
+        ])
 
-  //       const geometry = new THREE.TubeGeometry(path, 10, 0.02, 8, false)
+        const geometry = new THREE.TubeGeometry(path, 10, 0.02, 3, false)
 
-  //       // Определите цвет в зависимости от направления
-  //       let color
-  //       if (edge.direction === 'AtoB') {
-  //         color = new THREE.Color('blue') // Цвет для направления от A к B
-  //       } else if (edge.direction === 'BtoA') {
-  //         color = new THREE.Color('red') // Цвет для направления от B к A
-  //       } else {
-  //         color = new THREE.Color('black') // Цвет по умолчанию
-  //       }
+        // Определите цвет в зависимости от направления
+        let color
+        if (edge.direction === 'AtoB') {
+          color = new THREE.Color('blue') // Цвет для направления от A к B
+        } else if (edge.direction === 'BtoA') {
+          color = new THREE.Color('red') // Цвет для направления от B к A
+        } else {
+          color = new THREE.Color('black') // Цвет по умолчанию
+        }
 
-  //       const material = new THREE.MeshBasicMaterial({
-  //         color: color,
-  //         side: THREE.DoubleSide,
-  //       })
+        const material = new THREE.MeshBasicMaterial({
+          color: color,
+          side: THREE.DoubleSide,
+        })
 
-  //       const tube = new THREE.Mesh(geometry, material)
+        const tube = new THREE.Mesh(geometry, material)
 
-  //       sceneRef.current.add(tube)
-  //     })
-  //   }
-  // }, [edgesRef.current])
+        sceneRef.current.add(tube)
+      })
+    }
+  }, [edgesRef.current])
   return (
     <group ref={sceneRef}>
-      {cars[0].create()}
+      {cars.map((car, index) => (
+        <group key={index}>{car.create()}</group>
+      ))}
       {roads.map((road, index) => road.create(index))}
     </group>
   )
@@ -872,8 +944,8 @@ const App = () => {
           <SetupToneMapping />
           <axesHelper />
           <CameraControls
-            minPolarAngle={Math.PI / 5}
-            maxPolarAngle={Math.PI / 2.3}
+            // minPolarAngle={Math.PI / 5}
+            // maxPolarAngle={Math.PI / 2.3}
             minDistance={2}
             maxDistance={15}
           />
