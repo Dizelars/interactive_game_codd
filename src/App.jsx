@@ -1,13 +1,12 @@
 import React, { useRef, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
-  Plane,
-  Box,
   CameraControls,
   Fisheye,
   PerspectiveCamera,
   Stats,
   useGLTF,
+  Line,
 } from '@react-three/drei'
 import { useErrorBoundary } from 'use-error-boundary'
 import * as THREE from 'three'
@@ -21,9 +20,337 @@ const SetupToneMapping = () => {
   return null
 }
 
+class Navigator {
+  constructor() {
+    this.points = []
+    this.graph = []
+    this.edges = []
+  }
+  generateRandomRoute() {
+    const getRandomNum = (max, min = 0) => Math.random() * (max - min) + min
+    const getRandomIndex = (max) => Math.floor(getRandomNum(max))
+    const getRandomEdgePoint = (edgePoint) => {
+      const randomIndex = getRandomIndex(this.edges.length)
+      return this.edges[randomIndex][edgePoint]
+    }
+    const randomStartPoint = this.lastPoint || getRandomEdgePoint('pointA')
+    const randomEndPoint = getRandomEdgePoint('pointB')
+
+    const result = this.dijkstra(
+      this.serializePoint({ x: randomStartPoint.xW, y: randomStartPoint.yW }),
+      this.serializePoint({ x: randomEndPoint.xW, y: randomEndPoint.yW })
+    )
+    console.log(result)
+
+    if (result.path.length > 5) {
+      this.lastPoint = randomEndPoint
+      const curvePoints = result.path.map(
+        (point) => new THREE.Vector3(point.x, 0, point.y)
+      )
+      const curve = new THREE.CatmullRomCurve3(curvePoints)
+      curve.points = curve.getPoints(Math.floor(result.distance * 100))
+      return { curve, distance: result.distance }
+    } else {
+      return {
+        curve: new THREE.CatmullRomCurve3([]),
+        distance: result.distance,
+      }
+    }
+  }
+  generateRoute(pointA = { x: 0, y: 0 }, pointB = { x: 0, y: 0 }) {
+    if (pointA.x != 0 && pointA.y != 0 && pointB.x != 0 && pointB.y != 0) {
+      const result = this.dijkstra(
+        this.serializePoint(pointA),
+        this.serializePoint(pointB)
+      )
+      console.log(result)
+
+      if (result.path.length > 2) {
+        const curvePoints = result.path.map(
+          (point) => new THREE.Vector3(point.x, 0, point.y)
+        )
+        const curve = new THREE.CatmullRomCurve3(curvePoints)
+        curve.points = curve.getPoints(Math.floor(result.distance * 100))
+        return { curve, distance: result.distance }
+      } else {
+        return {
+          curve: new THREE.CatmullRomCurve3([]),
+          distance: result.distance,
+        }
+      }
+    } else return this.generateRandomRoute()
+  }
+  generateGraph() {
+    const points = this.points
+    let lines = []
+    const calculateDistance = (pointA, pointB) => {
+      return (
+        Math.round(
+          Math.sqrt(
+            (pointB.xW - pointA.xW) ** 2 + (pointB.yW - pointA.yW) ** 2
+          ) * 1000
+        ) / 1000
+      )
+    }
+    const loadConnectedPoints = (pointA) => {
+      for (let j = 0; j < pointA.connections.length; j++) {
+        const connectedPoint = this.points.find(
+          (point) =>
+            point.index === pointA.connections[j] &&
+            calculateDistance(point, pointA) < 2.3
+        )
+
+        if (connectedPoint) {
+          const distance = calculateDistance(pointA, connectedPoint)
+          lines.push({
+            indexA: this.points.findIndex(
+              (point) => point.xW === pointA.xW && point.yW === pointA.yW
+            ),
+            indexB: this.points.findIndex(
+              (point) =>
+                point.xW === connectedPoint.xW && point.yW === connectedPoint.yW
+            ),
+            distance,
+            pointA,
+            pointB: connectedPoint,
+          })
+          if (connectedPoint.connections.length > 0)
+            loadConnectedPoints(connectedPoint)
+        }
+      }
+    }
+    const removeDublicates = (lines) => {
+      return lines.reduce((accumulator, item) => {
+        const pair = [item.indexA, item.indexB].sort((a, b) => a - b).join(',')
+        if (
+          !accumulator.some((existing) => {
+            const existingPair = [existing.indexA, existing.indexB]
+              .sort((a, b) => a - b)
+              .join(',')
+            return existingPair === pair
+          })
+        ) {
+          accumulator.push(item)
+        }
+        return accumulator
+      }, [])
+    }
+    for (let i = 0; i < points.length; i++) {
+      const pointA = points[i]
+      for (let j = 0; j < points.length; j++) {
+        if (i === j) continue
+        const pointB = points[j]
+        const distance = calculateDistance(pointA, pointB)
+
+        const hasRA = pointA.hasOwnProperty('r')
+        const hasRB = pointB.hasOwnProperty('r')
+        const hasDirectionA = pointA.hasOwnProperty('direction')
+        const hasDirectionB = pointB.hasOwnProperty('direction')
+        const isXRoadTile =
+          (pointA.x <= 0 && pointB.x <= 0) || (pointA.x >= 0 && pointB.x >= 0)
+
+        // Определение "одинаковой стороны"
+        const sameSide =
+          hasRA || hasRB
+            ? hasDirectionA || hasDirectionB
+              ? pointA.x === pointB.y || pointA.y === pointB.x
+              : isXRoadTile
+            : hasDirectionA || hasDirectionB
+              ? pointA.x === pointB.x || pointA.y === pointB.y
+              : isXRoadTile
+
+        const differentDirection = hasDirectionA !== hasDirectionB
+        if (distance > 0.69 && distance < 0.8 && sameSide) {
+          if (pointA.y == pointB.y || differentDirection) {
+            lines.push({ indexA: i, indexB: j, distance, pointA, pointB })
+          }
+        }
+      }
+    }
+
+    lines = removeDublicates(lines)
+    const linesWithConnections = lines.filter(
+      (line) =>
+        line.pointA.connections.length > 0 || line.pointB.connections.length > 0
+    )
+    for (let i = 0; i < linesWithConnections.length; i++) {
+      const line = linesWithConnections[i]
+      const { pointA, pointB } = line
+      if (pointA.connections.length > 0) {
+        loadConnectedPoints(pointA)
+      } else {
+        for (let j = 0; j < pointB.connections.length; j++) {
+          console.log(pointB.connections[j])
+        }
+      }
+    }
+
+    lines = removeDublicates(lines)
+    const updateDirections = (lines, startLine, direction) => {
+      const stack = [startLine] // Используем стек для обхода графа
+      const visited = new Set() // Чтобы не посещать одно и то же ребро несколько раз
+
+      while (stack.length > 0) {
+        const currentLine = stack.pop()
+
+        if (visited.has(currentLine)) continue // Пропускаем уже посещенные рёбра
+        visited.add(currentLine)
+
+        // Обновляем направление для текущего ребра
+        if (!currentLine.direction) {
+          currentLine.direction = direction
+          lines[currentLine.index] = currentLine // Обновляем в исходном массиве
+
+          // Получаем соседние рёбра
+          const neighbors = lines.filter(
+            (line) =>
+              (line.pointA === currentLine.pointB &&
+                line.pointB !== currentLine.pointA) ||
+              (line.pointB === currentLine.pointA &&
+                line.pointA !== currentLine.pointB)
+          )
+
+          // Добавляем соседние рёбра в стек для последующей обработки
+          neighbors.forEach((neighbor) => {
+            if (!visited.has(neighbor)) {
+              stack.push(neighbor)
+            }
+          })
+        }
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+
+      if (
+        (line.pointA.hasOwnProperty('direction') &&
+          line.pointB.type &&
+          line.pointB?.type === 'road') ||
+        (line.pointB.hasOwnProperty('direction') &&
+          line.pointA.type &&
+          line.pointA?.type === 'road')
+      ) {
+        if (line.pointA.direction) {
+          updateDirections(lines, line, 'BtoA')
+        } else {
+          updateDirections(lines, line, 'AtoB')
+        }
+      }
+    }
+    const graph = new Map()
+    lines.forEach((edge) => {
+      const { distance, pointA, pointB, direction } = edge
+
+      const keyA = this.serializePoint({ x: pointA.xW, y: pointA.yW })
+      const keyB = this.serializePoint({ x: pointB.xW, y: pointB.yW })
+
+      // Инициализация вершин в графе, если их еще нет
+      if (!graph.has(keyA)) {
+        graph.set(keyA, [])
+      }
+      if (!graph.has(keyB)) {
+        graph.set(keyB, [])
+      }
+
+      // Добавляем рёбра в зависимости от направления
+      if (direction === 'AtoB') {
+        graph.get(keyA).push({ point: keyB, distance })
+      } else if (direction === 'BtoA') {
+        graph.get(keyB).push({ point: keyA, distance })
+      }
+    })
+
+    this.edges = [...lines]
+    return (this.graph = graph)
+  }
+  dijkstra(start, end) {
+    if (!this.graph.has(start) || !this.graph.has(end)) {
+      console.error('Start or end point not in graph')
+      return { path: [], distance: Infinity }
+    }
+
+    const distances = new Map() // Stores shortest distance from start to each node
+    const previousNodes = new Map() // Stores previous node for each node
+    const unvisitedNodes = new Set(this.graph.keys()) // All nodes to be visited
+
+    // Initialize distances and previous nodes
+    for (const node of this.graph.keys()) {
+      distances.set(node, Infinity)
+      previousNodes.set(node, null)
+    }
+    distances.set(start, 0)
+
+    while (unvisitedNodes.size > 0) {
+      // Get the node with the smallest distance
+      let currentNode = null
+      for (const node of unvisitedNodes) {
+        if (
+          currentNode === null ||
+          distances.get(node) < distances.get(currentNode)
+        ) {
+          currentNode = node
+        }
+      }
+
+      if (distances.get(currentNode) === Infinity) {
+        break // All remaining nodes are unreachable
+      }
+
+      // Update distances to neighbors
+      for (const neighbor of this.graph.get(currentNode)) {
+        const alternativeDistance =
+          distances.get(currentNode) + neighbor.distance
+        if (alternativeDistance < distances.get(neighbor.point)) {
+          distances.set(neighbor.point, alternativeDistance)
+          previousNodes.set(neighbor.point, currentNode)
+        }
+      }
+
+      unvisitedNodes.delete(currentNode)
+    }
+
+    // Reconstruct shortest path
+    const path = []
+    let currentNode = end
+    while (currentNode !== null) {
+      path.unshift(this.deserializePoint(currentNode))
+      currentNode = previousNodes.get(currentNode)
+    }
+
+    // Ensure that the path starts with the start node
+    const startPoint = this.deserializePoint(start)
+    if (
+      path.length === 0 ||
+      path[0].x !== startPoint.x ||
+      path[0].y !== startPoint.y
+    ) {
+      console.warn('Path reconstruction issue')
+      return { path: [], distance: Infinity }
+    }
+
+    return {
+      path,
+      distance:
+        distances.get(end) !== undefined ? distances.get(end) : Infinity,
+    }
+  }
+  serializePoint(point) {
+    return `${Math.round(point.x * 1000) / 1000},${Math.round(point.y * 1000) / 1000}`
+  }
+  deserializePoint(pointStr) {
+    const [x, y] = pointStr.split(',').map(Number)
+    return { x, y }
+  }
+}
+
 class Road {
-  constructor({ x = 0, y = 0, type = 0, points = [] }) {
-    ;(this.coordinates = [x, y]),
+  constructor({ x = 0, y = 0, type = 0, points = [], r = 0 }) {
+    ;(this.coordinates = {
+      x,
+      y,
+      r,
+    }),
       (this.ref = useRef()),
       (this.points = points),
       (this.type = type),
@@ -31,11 +358,28 @@ class Road {
         {
           points: [
             {
-              coordinates: { x: 0, y: 0 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
-              direction: false,
+              x: 0.51,
+              y: 0,
+              type: 'road',
+              connections: [],
+            },
+            {
+              x: 0.17,
+              y: 0,
+              type: 'road',
+              connections: [],
+            },
+            {
+              x: -0.51,
+              y: 0,
+              type: 'road',
+              connections: [],
+            },
+            {
+              x: -0.17,
+              y: 0,
+              type: 'road',
+              connections: [],
             },
           ],
           url: 'Road_2',
@@ -43,113 +387,181 @@ class Road {
         {
           points: [
             {
-              coordinates: { x: 1.1, y: 0.335 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: 1.1,
+              y: 0.51, // 0
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: 1.1, y: -0.335 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: 1.1,
+              y: 0.17, // 1
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: -1.1, y: 0.335 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: 1.1,
+              y: -0.51, // 2
+              direction: true,
+              connections: [21],
+            },
+            {
+              x: 1.1,
+              y: -0.17, // 3
+              direction: true,
+              connections: [27, 7],
+            },
+            {
+              x: -1.1,
+              y: 0.51, // 4
+              direction: true,
+              connections: [19],
+            },
+            {
+              x: -1.1,
+              y: 0.17, // 5
+              direction: true,
+              connections: [24, 1],
+            },
+            {
+              x: -1.1,
+              y: -0.51, // 6
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: -1.1, y: -0.335 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: -1.1,
+              y: -0.17, // 7
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: 0.335, y: 1.1 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: 0.51,
+              y: 1.1, // 8
+              direction: true,
+              connections: [17],
+            },
+            {
+              x: 0.17,
+              y: 1.1, // 9
+              direction: true,
+              connections: [18, 13],
+            },
+            {
+              x: -0.51,
+              y: 1.1, // 10
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: 0.335, y: -1.1 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: -0.17,
+              y: 1.1, // 11
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: -0.335, y: 1.1 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: 0.51,
+              y: -1.1, // 12
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: -0.335, y: -1.1 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
+              x: 0.17,
+              y: -1.1, // 13
               direction: false,
               connections: [],
             },
             {
-              coordinates: { x: 0.4, y: 0.4 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
-              direction: false,
-              connections: [],
+              x: -0.51,
+              y: -1.1, // 14
+              direction: true,
+              connections: [23],
             },
             {
-              coordinates: { x: 0.4, y: -0.4 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
-              direction: false,
-              connections: [],
+              x: -0.17,
+              y: -1.1, // 15
+              direction: true,
+              connections: [20, 11],
             },
             {
-              coordinates: { x: -0.4, y: 0.4 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
-              direction: false,
-              connections: [],
+              x: 0.17,
+              y: 0.51, // 16
+              connections: [11],
             },
             {
-              coordinates: { x: -0.4, y: -0.4 },
-              isBlocked: false,
-              isTraficLight: false,
-              score: 0,
-              direction: false,
-              connections: [],
+              x: 0.51,
+              y: 0.51, // 17
+              connections: [0, 12],
+            },
+            {
+              x: -0.17,
+              y: 0.51, // 18
+              connections: [10, 25],
+            },
+            {
+              x: -0.51,
+              y: 0.51, // 19
+              connections: [10, 0],
+            },
+            {
+              x: 0.17,
+              y: -0.51, // 20
+              connections: [12, 26],
+            },
+            {
+              x: 0.51,
+              y: -0.51, // 21
+              connections: [12, 6],
+            },
+            {
+              x: -0.17,
+              y: -0.51, // 22
+              connections: [13],
+            },
+            {
+              x: -0.51,
+              y: -0.51, // 23
+              connections: [6, 10],
+            },
+            {
+              x: -0.51,
+              y: -0.17, // 24
+              connections: [6, 22],
+            },
+            {
+              x: -0.51,
+              y: 0.17, // 25
+              connections: [7],
+            },
+            {
+              x: 0.51,
+              y: -0.17, // 26
+              connections: [1],
+            },
+            {
+              x: 0.51,
+              y: 0.17, // 27
+              connections: [0, 16],
             },
           ],
           url: 'Road_Crossroads_1',
         },
       ])
   }
-  create() {
+  create(key) {
     const { nodes, materials } = useGLTF(
       `/assets/Roads/${this.listOfTypes[this.type].url}.gltf`
     )
-
     return (
-      <group ref={this.ref}>
+      <group
+        ref={this.ref}
+        key={key}
+        position={[this.coordinates.x, 0, this.coordinates.y]}
+        rotation={[
+          0,
+          this.coordinates.r == 0 ? 0 : Math.PI / this.coordinates.r,
+          0,
+        ]}
+      >
         <mesh
           castShadow
           receiveShadow
@@ -157,24 +569,48 @@ class Road {
           material={materials.Mat}
           scale={0.07}
         />
-        {this.debug()}
+        {this.debug(false)}
       </group>
     )
   }
-  debug() {
-    console.log('Debug enabled on Roads', this.listOfTypes[this.type].points)
-
-    return this.listOfTypes[this.type].points.map((p, index) => (
-      <mesh position={[p.coordinates.x, 0, p.coordinates.y]} key={index}>
-        <sphereGeometry args={[0.05, 12, 12]} />
-        <meshStandardMaterial color="red" />
-      </mesh>
-    ))
+  debug(show = true) {
+    return this.listOfTypes[this.type].points.map((point, index) => {
+      const color = !point.direction ? '#a83232' : '#32a852'
+      if (this.coordinates.r == 2) {
+        this.listOfTypes[this.type].points[index].xW =
+          Math.round((point.y + this.coordinates.x) * 1000) / 1000
+        this.listOfTypes[this.type].points[index].yW =
+          Math.round((point.x + this.coordinates.y) * 1000) / 1000
+        this.listOfTypes[this.type].points[index].r = this.coordinates.r
+      } else {
+        this.listOfTypes[this.type].points[index].xW =
+          Math.round((point.x + this.coordinates.x) * 1000) / 1000
+        this.listOfTypes[this.type].points[index].yW =
+          Math.round((point.y + this.coordinates.y) * 1000) / 1000
+      }
+      this.listOfTypes[this.type].points[index].index = index
+      this.points.push(this.listOfTypes[this.type].points[index])
+      if (show)
+        return (
+          <mesh
+            key={index}
+            position={[point.x, 0, point.y]}
+            onClick={() => console.log('debug', { index, ...point })}
+          >
+            <sphereGeometry args={[0.05, 12, 12]} />
+            <meshStandardMaterial color={color} />
+          </mesh>
+        )
+    })
+  }
+  setPoints(points = []) {
+    this.points = []
+    this.points.push(...points)
   }
 }
 
 class Car {
-  constructor() {
+  constructor(navigator = Navigator) {
     ;(this.coordinates = [0, 0]),
       (this.garageID = 0),
       (this.ref = useRef()),
@@ -183,11 +619,13 @@ class Car {
       (this.path = []),
       (this.curve = useRef(new THREE.CurvePath())),
       (this.curveRef = useRef()),
-      (this.curveRefOld = useRef())
+      (this.curveRefOld = useRef()),
+      (this.navigator = navigator),
+      (this.canMove = true)
   }
   create() {
     useFrame(() => {
-      // this.move()
+      this.move()
     })
     const { nodes, materials } = useGLTF('/assets/Vehicles/Truck_2.gltf')
 
@@ -202,7 +640,7 @@ class Car {
             material={materials.Mat}
             scale={0.07}
           >
-            {/* <pointLight
+            <pointLight
               position={[0.15, 0.2, 0.3]}
               intensity={1}
               distance={2}
@@ -211,7 +649,7 @@ class Car {
               position={[-0.15, 0.2, 0.3]}
               intensity={1}
               distance={2}
-            /> */}
+            />
           </mesh>
         </group>
         <mesh ref={this.curveRef}>
@@ -226,94 +664,198 @@ class Car {
     )
   }
   move() {
-    if (this.ref.current && this.curve) {
+    if (this.ref.current && this.curve && this.canMove) {
       this.progress += 0.001
+
+      // Сброс прогресса и генерация нового маршрута, если он превышает 1
       if (this.progress > 1) {
-        this.curve = this.generateRoute()
-        this.progress = 0
+        this.curve = this.navigator.generateRoute()
+        this.progress = 0.001
       }
-      const point = this.curve.getPoint(this.progress)
-      let oldCurve = []
-      let newCurve = []
-      for (let i = 0; i < 999; i++) {
-        if (Math.round(this.progress * 1000) <= i) {
-          oldCurve.push(this.curve.points[i])
-        } else {
-          newCurve.push(this.curve.points[i])
+
+      const updateCurveGeometry = (ref, points) => {
+        if (points.length > 1) {
+          const curve = new THREE.CatmullRomCurve3(points)
+          // Убедитесь, что вы переиспользуете старую геометрию, если это возможно
+          if (ref.geometry) {
+            ref.geometry.dispose()
+          }
+          ref.geometry = new THREE.TubeGeometry(
+            curve,
+            Math.max(points.length * 2, 8), // Убедитесь, что количество сегментов не слишком велико
+            0.025,
+            6,
+            false
+          )
         }
       }
-      if (newCurve.length > 1) {
-        newCurve = new THREE.CatmullRomCurve3(newCurve)
-        this.curveRef.current.geometry = new THREE.TubeGeometry(
-          newCurve,
-          newCurve.points.length * 2,
-          0.025,
-          6,
-          false
-        )
+
+      const numPoints = this.curve.curve.points.length
+      const progressRatio = this.progress * numPoints
+
+      // Обновление кривых и геометрии, если точек больше 10
+      if (numPoints > 10) {
+        const point = this.curve.curve.getPoint(this.progress)
+        const threshold = Math.floor(progressRatio)
+
+        // Разделение точек на oldCurve и newCurve
+        const oldCurve = this.curve.curve.points.slice(0, threshold)
+        const newCurve = this.curve.curve.points.slice(threshold)
+
+        // Обновление геометрий oldCurve и newCurve
+        updateCurveGeometry(this.curveRef.current, oldCurve)
+        updateCurveGeometry(this.curveRefOld.current, newCurve)
+
+        // Обновление позиции и ориентации объекта
+        const nextPoint = this.curve.curve.getPoint(
+          Math.min(this.progress + 0.001, 1)
+        ) // Убедитесь, что не выходим за границы
+        nextPoint.y = 0
+        this.ref.current.position.set(point.x, 0, point.z)
+        this.ref.current.lookAt(nextPoint)
+      } else {
+        // Перегенерация маршрута, если точек недостаточно
+        this.curve = this.navigator.generateRoute()
+        this.progress = 0.001
       }
-      if (oldCurve.length > 1) {
-        oldCurve = new THREE.CatmullRomCurve3(oldCurve)
-        this.curveRefOld.current.geometry = new THREE.TubeGeometry(
-          oldCurve,
-          oldCurve.points.length * 2,
-          0.025,
-          6,
-          false
-        )
-      }
-      const nextPoint = this.curve.getPoint(this.progress + 0.001)
-      nextPoint.y = 0
-      this.setCoordinatesXY(point.x, point.z)
-      this.ref.current.lookAt(nextPoint)
     }
-  }
-  setCoordinatesXY(x = 0, y = 0) {
-    this.ref.current.position.set(x, 0, y)
-  }
-  getCoordinatesXY() {
-    const x = this.ref.current.position.x
-    const y = this.ref.current.position.z
-    return { x, y }
-  }
-  generateRoute() {
-    const XMax = 5
-    const YMax = 5
-    const XMin = -5
-    const YMin = -5
-    const points = []
-    const getRandomNum = (max = 1, min = 0) => {
-      return Math.random() * (max - min) + min
-    }
-    if (this.curve.points) {
-      points.push(
-        new THREE.Vector2(
-          this.curve.points[this.curve.points.length - 1].x,
-          this.curve.points[this.curve.points.length - 1].z
-        )
-      )
-    }
-    for (let i = 0; i < Math.floor(getRandomNum(10, 20)); i++) {
-      points.push(
-        new THREE.Vector2(getRandomNum(XMax, XMin), getRandomNum(YMax, YMin))
-      )
-    }
-    const path = new THREE.CatmullRomCurve3(
-      points.map((point) => new THREE.Vector3(point.x, 0, point.y))
-    )
-    path.points = path.getPoints(999)
-    return path
   }
 }
 const Scene = () => {
+  const sceneRef = useRef()
   const cars = []
-  cars.push(new Car())
+  let edgesRef = useRef([])
+  const navigator = new Navigator()
+  cars.push(new Car(navigator))
   const roads = []
-  roads.push(new Road({ type: 1, coordinates: [0, 0] }))
+  roads.push(
+    new Road({ type: 1, x: 0, y: 0 }), //
+    new Road({ type: 1, x: 6.44, y: 0 }), //
+    new Road({ type: 1, x: -6.44, y: 0 }),
+    new Road({ type: 1, x: 0, y: 6.44 }), //
+    new Road({ type: 1, x: 0, y: -6.44 }),
+    new Road({ type: 1, x: 6.44, y: 6.44 }), //
+    new Road({ type: 1, x: -6.44, y: 6.44 }),
+    new Road({ type: 1, x: -6.44, y: -6.44 }),
+    new Road({ type: 1, x: 6.44, y: -6.44 }),
+    new Road({ type: 0, x: 0, y: 1.82 }), //
+    new Road({ type: 0, x: 0, y: 2.52 }), //
+    new Road({ type: 0, x: 0, y: 3.22 }), //
+    new Road({ type: 0, x: 0, y: 3.92 }), //
+    new Road({ type: 0, x: 0, y: 4.62 }), //
+
+    new Road({ type: 0, x: 1.82, y: 0, r: 2 }), //
+    new Road({ type: 0, x: 2.52, y: 0, r: 2 }), //
+    new Road({ type: 0, x: 3.22, y: 0, r: 2 }), //
+    new Road({ type: 0, x: 3.92, y: 0, r: 2 }), //
+    new Road({ type: 0, x: 4.62, y: 0, r: 2 }), //
+
+    new Road({ type: 0, x: 0, y: -1.82 }),
+    new Road({ type: 0, x: 0, y: -2.52 }),
+    new Road({ type: 0, x: 0, y: -3.22 }),
+    new Road({ type: 0, x: 0, y: -3.92 }),
+    new Road({ type: 0, x: 0, y: -4.62 }),
+
+    new Road({ type: 0, x: -1.82, y: 0, r: 2 }),
+    new Road({ type: 0, x: -2.52, y: 0, r: 2 }),
+    new Road({ type: 0, x: -3.22, y: 0, r: 2 }),
+    new Road({ type: 0, x: -3.92, y: 0, r: 2 }),
+    new Road({ type: 0, x: -4.62, y: 0, r: 2 }),
+
+    new Road({ type: 0, x: 6.44, y: -1.82 }),
+    new Road({ type: 0, x: 6.44, y: -2.52 }),
+    new Road({ type: 0, x: 6.44, y: -3.22 }),
+    new Road({ type: 0, x: 6.44, y: -3.92 }),
+    new Road({ type: 0, x: 6.44, y: -4.62 }),
+
+    new Road({ type: 0, x: 6.44, y: 1.82 }), //
+    new Road({ type: 0, x: 6.44, y: 2.52 }), //
+    new Road({ type: 0, x: 6.44, y: 3.22 }), //
+    new Road({ type: 0, x: 6.44, y: 3.92 }), //
+    new Road({ type: 0, x: 6.44, y: 4.62 }), //
+
+    new Road({ type: 0, x: -6.44, y: -1.82 }),
+    new Road({ type: 0, x: -6.44, y: -2.52 }),
+    new Road({ type: 0, x: -6.44, y: -3.22 }),
+    new Road({ type: 0, x: -6.44, y: -3.92 }),
+    new Road({ type: 0, x: -6.44, y: -4.62 }),
+
+    new Road({ type: 0, x: -6.44, y: 1.82 }),
+    new Road({ type: 0, x: -6.44, y: 2.52 }),
+    new Road({ type: 0, x: -6.44, y: 3.22 }),
+    new Road({ type: 0, x: -6.44, y: 3.92 }),
+    new Road({ type: 0, x: -6.44, y: 4.62 }),
+
+    new Road({ type: 0, x: -1.82, y: 6.44, r: 2 }),
+    new Road({ type: 0, x: -2.52, y: 6.44, r: 2 }),
+    new Road({ type: 0, x: -3.22, y: 6.44, r: 2 }),
+    new Road({ type: 0, x: -3.92, y: 6.44, r: 2 }),
+    new Road({ type: 0, x: -4.62, y: 6.44, r: 2 }),
+
+    new Road({ type: 0, x: 1.82, y: 6.44, r: 2 }), //
+    new Road({ type: 0, x: 2.52, y: 6.44, r: 2 }), //
+    new Road({ type: 0, x: 3.22, y: 6.44, r: 2 }), //
+    new Road({ type: 0, x: 3.92, y: 6.44, r: 2 }), //
+    new Road({ type: 0, x: 4.62, y: 6.44, r: 2 }), //
+
+    new Road({ type: 0, x: -1.82, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: -2.52, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: -3.22, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: -3.92, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: -4.62, y: -6.44, r: 2 }),
+
+    new Road({ type: 0, x: 1.82, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: 2.52, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: 3.22, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: 3.92, y: -6.44, r: 2 }),
+    new Road({ type: 0, x: 4.62, y: -6.44, r: 2 })
+  )
+  useEffect(() => {
+    edgesRef.current = []
+    for (let i = 0; i < roads.length; i++) {
+      navigator.points.push(...roads[i].points)
+    }
+    navigator.generateGraph()
+    if (navigator && navigator.edges) {
+      edgesRef.current.push(...navigator.edges)
+    }
+  }, [])
+  // useEffect(() => {
+  //   if (sceneRef.current) {
+  //     edgesRef.current.forEach((edge) => {
+  //       const path = new THREE.CatmullRomCurve3([
+  //         new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
+  //         new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
+  //       ])
+
+  //       const geometry = new THREE.TubeGeometry(path, 10, 0.02, 8, false)
+
+  //       // Определите цвет в зависимости от направления
+  //       let color
+  //       if (edge.direction === 'AtoB') {
+  //         color = new THREE.Color('blue') // Цвет для направления от A к B
+  //       } else if (edge.direction === 'BtoA') {
+  //         color = new THREE.Color('red') // Цвет для направления от B к A
+  //       } else {
+  //         color = new THREE.Color('black') // Цвет по умолчанию
+  //       }
+
+  //       const material = new THREE.MeshBasicMaterial({
+  //         color: color,
+  //         side: THREE.DoubleSide,
+  //       })
+
+  //       const tube = new THREE.Mesh(geometry, material)
+
+  //       sceneRef.current.add(tube)
+  //     })
+  //   }
+  // }, [edgesRef.current])
   return (
-    <>
-      ({cars[0].create()}) ({roads[0].create()})
-    </>
+    <group ref={sceneRef}>
+      {cars[0].create()}
+      {roads.map((road, index) => road.create(index))}
+    </group>
   )
 }
 
@@ -324,28 +866,23 @@ const App = () => {
     <div>{error.message}</div>
   ) : (
     <ErrorBoundary>
-      <Canvas shadowmap="true" flat dpr={[2, 4]}>
-        {/* <OrbitControls /> */}
+      <Canvas shadowmap="true" flat dpr={[4, 6]}>
         <Fisheye zoom={0}>
           <color attach="background" args={['lightblue']} />
           <SetupToneMapping />
           <axesHelper />
           <CameraControls
-          // minPolarAngle={Math.PI / 5}
-          // maxPolarAngle={Math.PI / 2.3}
-          // minDistance={2}
-          // maxDistance={15}
+            minPolarAngle={Math.PI / 5}
+            maxPolarAngle={Math.PI / 2.3}
+            minDistance={2}
+            maxDistance={15}
           />
           <ambientLight intensity={1} />
-
-          {/* Полосы света для освещения со всех сторон */}
           <hemisphereLight
-            skyColor={0xffffff} // Цвет верхнего света
-            groundColor={0x444444} // Цвет нижнего света
+            skyColor={0xffffff}
+            groundColor={0x444444}
             intensity={1.5}
           />
-
-          {/* Несколько точечных источников света */}
           <pointLight position={[5, 5, 5]} intensity={1.5} decay={2} />
           <pointLight position={[-5, 5, 5]} intensity={1.5} decay={2} />
           <pointLight position={[5, 5, -5]} intensity={1.5} decay={2} />
