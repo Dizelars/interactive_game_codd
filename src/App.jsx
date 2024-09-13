@@ -8,6 +8,8 @@ import {
   Detailed,
   Box,
   Plane,
+  Cone,
+  useTexture,
 } from '@react-three/drei'
 import { useErrorBoundary } from 'use-error-boundary'
 import * as THREE from 'three'
@@ -613,7 +615,7 @@ class Road {
           material={materials.Mat}
           scale={0.07}
         />
-        {this.debug()}
+        {this.debug(false)}
       </group>
     )
   }
@@ -672,10 +674,11 @@ class Car {
     const LOD1 = loader.get(`/assets/Vehicles/${model}-0.7.gltf`).nodes
     const LOD2 = loader.get(`/assets/Vehicles/${model}-0.5.gltf`).nodes
     const LOD3 = loader.get(`/assets/Vehicles/${model}-0.2.gltf`).nodes
+    const [gradientTexture] = useTexture(['/assets/gradient_texture.png'])
     return (
       <>
         <group ref={this.ref}>
-          <Detailed distances={[2, 7, 10, 15]}>
+          <Detailed distances={[2, 7, 10, 15, 20]}>
             <mesh
               rotation={[0, Math.PI / 2, 0]}
               castShadow
@@ -684,7 +687,30 @@ class Car {
               material={materials.Mat}
               distance={10}
               scale={0.07}
-            ></mesh>
+            >
+              <Cone
+                args={[2, 10, 6]}
+                position={[-6.7, 0, 1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+              <Cone
+                args={[2, 10, 6]}
+                position={[-6.7, 0, -1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+            </mesh>
             <mesh
               rotation={[0, Math.PI / 2, 0]}
               castShadow
@@ -693,7 +719,30 @@ class Car {
               material={materials.Mat}
               distance={10}
               scale={0.07}
-            ></mesh>
+            >
+              <Cone
+                args={[2, 10, 5]}
+                position={[-6.7, 0, 1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+              <Cone
+                args={[2, 10, 5]}
+                position={[-6.7, 0, -1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+            </mesh>
             <mesh
               rotation={[0, Math.PI / 2, 0]}
               castShadow
@@ -702,7 +751,62 @@ class Car {
               material={materials.Mat}
               distance={10}
               scale={0.07}
-            ></mesh>
+            >
+              <Cone
+                args={[2, 10, 3]}
+                position={[-6.7, 0, 1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+              <Cone
+                args={[2, 10, 3]}
+                position={[-6.7, 0, -1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+            </mesh>
+            <mesh
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+              geometry={LOD3[model].geometry}
+              material={materials.Mat}
+              distance={10}
+              scale={0.07}
+            >
+              <Cone
+                args={[2, 10, 2]}
+                position={[-6.7, 0, 1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+              <Cone
+                args={[2, 10, 2]}
+                position={[-6.7, 0, -1.15]}
+                rotation={[0, 0, Math.PI / -2.6]}
+              >
+                <meshStandardMaterial
+                  map={gradientTexture}
+                  transparent={true}
+                  opacity={0.3}
+                />
+              </Cone>
+            </mesh>
             <mesh
               rotation={[0, Math.PI / 2, 0]}
               castShadow
@@ -784,7 +888,7 @@ const Scene = () => {
   const roads = []
   let edgesRef = useRef([])
   const navigator = new Navigator()
-  for (let i = 0; i < 500; i++) {
+  for (let i = 0; i < 20; i++) {
     cars.push(new Car(navigator))
   }
   console.log(cars.length)
@@ -948,6 +1052,10 @@ const App = () => {
     <div>{error.message}</div>
   ) : (
     <ErrorBoundary>
+      {/* <video autoPlay loop muted playsInline>
+        <source src="/assets/0001-0226.webm" type="video/webm" />
+        Ваш браузер не поддерживает видео в формате WebM.
+      </video> */}
       <Canvas shadowmap="true" flat dpr={[4, 6]}>
         <color attach="background" args={['lightblue']} />
         <SetupToneMapping />
