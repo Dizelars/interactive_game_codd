@@ -5,6 +5,9 @@ import {
   PerspectiveCamera,
   Stats,
   useGLTF,
+  Detailed,
+  Box,
+  Plane,
 } from '@react-three/drei'
 import { useErrorBoundary } from 'use-error-boundary'
 import * as THREE from 'three'
@@ -48,6 +51,7 @@ class Navigator {
     this.points = []
     this.graph = []
     this.edges = []
+    this.debug = false
   }
   getRandomEdgePoint = () => {
     const getRandomNum = (max, min = 0) => Math.random() * (max - min) + min
@@ -82,7 +86,7 @@ class Navigator {
         this.serializePoint(pointA),
         this.serializePoint(pointB)
       )
-      console.log(result)
+      if (this.debug) console.log(result)
 
       if (result.path.length > 1) {
         const curvePoints = result.path.map(
@@ -344,7 +348,7 @@ class Navigator {
       path[0].x !== startPoint.x ||
       path[0].y !== startPoint.y
     ) {
-      console.warn('Path reconstruction issue')
+      if (this.debug) console.warn('Path reconstruction issue')
       return { path: [], distance: Infinity }
     }
 
@@ -365,207 +369,207 @@ class Navigator {
 
 class Road {
   constructor({ x = 0, y = 0, type = 0, blocked = [], r = 0 }) {
-    ;(this.coordinates = {
+    this.coordinates = {
       x,
       y,
       r,
-    }),
-      (this.ref = useRef()),
-      (this.points = []),
-      (this.type = type),
-      (this.listOfTypes = [
-        {
-          points: [
-            {
-              x: 0.51,
-              y: 0,
-              type: 'road',
-              connections: [],
-            },
-            {
-              x: 0.17,
-              y: 0,
-              type: 'road',
-              connections: [],
-            },
-            {
-              x: -0.51,
-              y: 0,
-              type: 'road',
-              connections: [],
-            },
-            {
-              x: -0.17,
-              y: 0,
-              type: 'road',
-              connections: [],
-            },
-          ],
-          url: 'Road_2',
-        },
-        {
-          points: [
-            {
-              x: 1.1,
-              y: 0.51, // 0
-              direction: false,
-              connections: [],
-            },
-            {
-              x: 1.1,
-              y: 0.17, // 1
-              direction: false,
-              connections: [],
-            },
-            {
-              x: 1.1,
-              y: -0.51, // 2
-              direction: true,
-              connections: [21],
-            },
-            {
-              x: 1.1,
-              y: -0.17, // 3
-              direction: true,
-              connections: [27, 7],
-            },
-            {
-              x: -1.1,
-              y: 0.51, // 4
-              direction: true,
-              connections: [19],
-            },
-            {
-              x: -1.1,
-              y: 0.17, // 5
-              direction: true,
-              connections: [24, 1],
-            },
-            {
-              x: -1.1,
-              y: -0.51, // 6
-              direction: false,
-              connections: [],
-            },
-            {
-              x: -1.1,
-              y: -0.17, // 7
-              direction: false,
-              connections: [],
-            },
-            {
-              x: 0.51,
-              y: 1.1, // 8
-              direction: true,
-              connections: [17],
-            },
-            {
-              x: 0.17,
-              y: 1.1, // 9
-              direction: true,
-              connections: [18, 13],
-            },
-            {
-              x: -0.51,
-              y: 1.1, // 10
-              direction: false,
-              connections: [],
-            },
-            {
-              x: -0.17,
-              y: 1.1, // 11
-              direction: false,
-              connections: [],
-            },
-            {
-              x: 0.51,
-              y: -1.1, // 12
-              direction: false,
-              connections: [],
-            },
-            {
-              x: 0.17,
-              y: -1.1, // 13
-              direction: false,
-              connections: [],
-            },
-            {
-              x: -0.51,
-              y: -1.1, // 14
-              direction: true,
-              connections: [23],
-            },
-            {
-              x: -0.17,
-              y: -1.1, // 15
-              direction: true,
-              connections: [20, 11],
-            },
-            {
-              x: 0.17,
-              y: 0.51, // 16
-              connections: [11],
-            },
-            {
-              x: 0.51,
-              y: 0.51, // 17
-              connections: [0, 12],
-            },
-            {
-              x: -0.17,
-              y: 0.51, // 18
-              connections: [10, 25],
-            },
-            {
-              x: -0.51,
-              y: 0.51, // 19
-              connections: [10, 0],
-            },
-            {
-              x: 0.17,
-              y: -0.51, // 20
-              connections: [12, 26],
-            },
-            {
-              x: 0.51,
-              y: -0.51, // 21
-              connections: [12, 6],
-            },
-            {
-              x: -0.17,
-              y: -0.51, // 22
-              connections: [13],
-            },
-            {
-              x: -0.51,
-              y: -0.51, // 23
-              connections: [6, 10],
-            },
-            {
-              x: -0.51,
-              y: -0.17, // 24
-              connections: [6, 22],
-            },
-            {
-              x: -0.51,
-              y: 0.17, // 25
-              connections: [7],
-            },
-            {
-              x: 0.51,
-              y: -0.17, // 26
-              connections: [1],
-            },
-            {
-              x: 0.51,
-              y: 0.17, // 27
-              connections: [0, 16],
-            },
-          ],
-          url: 'Road_Crossroads_1',
-        },
-      ]),
-      (this.blocked = blocked)
+    }
+    this.ref = useRef()
+    this.points = []
+    this.type = type
+    this.listOfTypes = [
+      {
+        points: [
+          {
+            x: 0.51,
+            y: 0,
+            type: 'road',
+            connections: [],
+          },
+          {
+            x: 0.17,
+            y: 0,
+            type: 'road',
+            connections: [],
+          },
+          {
+            x: -0.51,
+            y: 0,
+            type: 'road',
+            connections: [],
+          },
+          {
+            x: -0.17,
+            y: 0,
+            type: 'road',
+            connections: [],
+          },
+        ],
+        url: 'Road_2',
+      },
+      {
+        points: [
+          {
+            x: 1.1,
+            y: 0.51, // 0
+            direction: false,
+            connections: [],
+          },
+          {
+            x: 1.1,
+            y: 0.17, // 1
+            direction: false,
+            connections: [],
+          },
+          {
+            x: 1.1,
+            y: -0.51, // 2
+            direction: true,
+            connections: [21],
+          },
+          {
+            x: 1.1,
+            y: -0.17, // 3
+            direction: true,
+            connections: [27, 7],
+          },
+          {
+            x: -1.1,
+            y: 0.51, // 4
+            direction: true,
+            connections: [19],
+          },
+          {
+            x: -1.1,
+            y: 0.17, // 5
+            direction: true,
+            connections: [24, 1],
+          },
+          {
+            x: -1.1,
+            y: -0.51, // 6
+            direction: false,
+            connections: [],
+          },
+          {
+            x: -1.1,
+            y: -0.17, // 7
+            direction: false,
+            connections: [],
+          },
+          {
+            x: 0.51,
+            y: 1.1, // 8
+            direction: true,
+            connections: [17],
+          },
+          {
+            x: 0.17,
+            y: 1.1, // 9
+            direction: true,
+            connections: [18, 13],
+          },
+          {
+            x: -0.51,
+            y: 1.1, // 10
+            direction: false,
+            connections: [],
+          },
+          {
+            x: -0.17,
+            y: 1.1, // 11
+            direction: false,
+            connections: [],
+          },
+          {
+            x: 0.51,
+            y: -1.1, // 12
+            direction: false,
+            connections: [],
+          },
+          {
+            x: 0.17,
+            y: -1.1, // 13
+            direction: false,
+            connections: [],
+          },
+          {
+            x: -0.51,
+            y: -1.1, // 14
+            direction: true,
+            connections: [23],
+          },
+          {
+            x: -0.17,
+            y: -1.1, // 15
+            direction: true,
+            connections: [20, 11],
+          },
+          {
+            x: 0.17,
+            y: 0.51, // 16
+            connections: [11],
+          },
+          {
+            x: 0.51,
+            y: 0.51, // 17
+            connections: [0, 12],
+          },
+          {
+            x: -0.17,
+            y: 0.51, // 18
+            connections: [10, 25],
+          },
+          {
+            x: -0.51,
+            y: 0.51, // 19
+            connections: [10, 0],
+          },
+          {
+            x: 0.17,
+            y: -0.51, // 20
+            connections: [12, 26],
+          },
+          {
+            x: 0.51,
+            y: -0.51, // 21
+            connections: [12, 6],
+          },
+          {
+            x: -0.17,
+            y: -0.51, // 22
+            connections: [13],
+          },
+          {
+            x: -0.51,
+            y: -0.51, // 23
+            connections: [6, 10],
+          },
+          {
+            x: -0.51,
+            y: -0.17, // 24
+            connections: [6, 22],
+          },
+          {
+            x: -0.51,
+            y: 0.17, // 25
+            connections: [7],
+          },
+          {
+            x: 0.51,
+            y: -0.17, // 26
+            connections: [1],
+          },
+          {
+            x: 0.51,
+            y: 0.17, // 27
+            connections: [0, 16],
+          },
+        ],
+        url: 'Road_Crossroads_1',
+      },
+    ]
+    this.blocked = blocked
   }
   create(key) {
     const { nodes, materials } = loader.get(
@@ -609,7 +613,7 @@ class Road {
           material={materials.Mat}
           scale={0.07}
         />
-        {this.debug(false)}
+        {this.debug()}
       </group>
     )
   }
@@ -637,19 +641,19 @@ class Road {
 
 class Car {
   constructor(navigator = Navigator) {
-    ;(this.coordinates = [0, 0]),
-      (this.garageID = 0),
-      (this.ref = useRef()),
-      (this.speed = 60),
-      (this.progress = 1),
-      (this.path = []),
-      (this.curve = useRef(new THREE.CurvePath())),
-      (this.curveRef = useRef()),
-      (this.curveRefOld = useRef()),
-      (this.navigator = navigator),
-      (this.canMove = true),
-      (this.showTrace = false),
-      (this.lastPoint = undefined)
+    this.coordinates = [0, 0]
+    this.garageID = 0
+    this.ref = useRef()
+    this.speed = 60
+    this.progress = 1
+    this.path = []
+    this.curve = useRef(new THREE.CurvePath())
+    this.curveRef = useRef()
+    this.curveRefOld = useRef()
+    this.navigator = navigator
+    this.canMove = true
+    this.showTrace = false
+    this.lastPoint = undefined
   }
   create() {
     const frameCountRef = useRef(0)
@@ -661,32 +665,54 @@ class Car {
         this.move()
       }
     })
-    const model = Math.random() < 0.5 ? 'Truck_2' : 'Car_2_1'
+    // const model = Math.random() < 0.5 ? 'Truck_2' : 'Car_2_1'
+    const model = 'Truck_2'
 
     const { nodes, materials } = loader.get(`/assets/Vehicles/${model}.gltf`)
-
+    const LOD1 = loader.get(`/assets/Vehicles/${model}-0.7.gltf`).nodes
+    const LOD2 = loader.get(`/assets/Vehicles/${model}-0.5.gltf`).nodes
+    const LOD3 = loader.get(`/assets/Vehicles/${model}-0.2.gltf`).nodes
     return (
       <>
         <group ref={this.ref}>
-          <mesh
-            rotation={[0, Math.PI / 2, 0]}
-            castShadow
-            receiveShadow
-            geometry={nodes[model].geometry}
-            material={materials.Mat}
-            scale={0.07}
-          >
-            <pointLight
-              position={[0.15, 0.2, 0.3]}
-              intensity={1}
-              distance={2}
-            />
-            <pointLight
-              position={[-0.15, 0.2, 0.3]}
-              intensity={1}
-              distance={2}
-            />
-          </mesh>
+          <Detailed distances={[2, 7, 10, 15]}>
+            <mesh
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+              geometry={nodes[model].geometry}
+              material={materials.Mat}
+              distance={10}
+              scale={0.07}
+            ></mesh>
+            <mesh
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+              geometry={LOD1[model].geometry}
+              material={materials.Mat}
+              distance={10}
+              scale={0.07}
+            ></mesh>
+            <mesh
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+              geometry={LOD2[model].geometry}
+              material={materials.Mat}
+              distance={10}
+              scale={0.07}
+            ></mesh>
+            <mesh
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+              geometry={LOD3[model].geometry}
+              material={materials.Mat}
+              distance={10}
+              scale={0.07}
+            ></mesh>
+          </Detailed>
         </group>
         <mesh ref={this.curveRef}>
           <bufferGeometry />
@@ -758,41 +784,16 @@ const Scene = () => {
   const roads = []
   let edgesRef = useRef([])
   const navigator = new Navigator()
-  cars.push(
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator),
-    new Car(navigator)
-  )
+  for (let i = 0; i < 500; i++) {
+    cars.push(new Car(navigator))
+  }
   console.log(cars.length)
   roads.push(
     new Road({ type: 1, x: 0, y: 0, blocked: [] }), //
-    new Road({ type: 1, x: 6.44, y: 0, blocked: [0, 1, 2, 3] }), //
-    new Road({ type: 1, x: -6.44, y: 0, blocked: [4, 5, 6, 7] }),
-    new Road({ type: 1, x: 0, y: 6.44, blocked: [8, 9, 10, 11] }), //
-    new Road({ type: 1, x: 0, y: -6.44, blocked: [12, 13, 14, 15] }),
+    new Road({ type: 1, x: 6.44, y: 0, blocked: [0, 1, 2, 3, 26] }), //
+    new Road({ type: 1, x: -6.44, y: 0, blocked: [4, 5, 6, 7, 25] }),
+    new Road({ type: 1, x: 0, y: 6.44, blocked: [8, 9, 10, 11, 16] }), //
+    new Road({ type: 1, x: 0, y: -6.44, blocked: [12, 13, 14, 15, 22] }),
     new Road({
       type: 1,
       x: 6.44,
@@ -899,37 +900,37 @@ const Scene = () => {
       edgesRef.current.push(...navigator.edges)
     }
   }, [])
-  // useEffect(() => {
-  //   if (sceneRef.current) {
-  //     edgesRef.current.forEach((edge) => {
-  //       const path = new THREE.CatmullRomCurve3([
-  //         new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
-  //         new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
-  //       ])
+  useEffect(() => {
+    if (sceneRef.current) {
+      edgesRef.current.forEach((edge) => {
+        const path = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(edge.pointA.xW, 0, edge.pointA.yW),
+          new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
+        ])
 
-  //       const geometry = new THREE.TubeGeometry(path, 10, 0.02, 3, false)
+        const geometry = new THREE.TubeGeometry(path, 10, 0.02, 3, false)
 
-  //       // Определите цвет в зависимости от направления
-  //       let color
-  //       if (edge.direction === 'AtoB') {
-  //         color = new THREE.Color('blue') // Цвет для направления от A к B
-  //       } else if (edge.direction === 'BtoA') {
-  //         color = new THREE.Color('red') // Цвет для направления от B к A
-  //       } else {
-  //         color = new THREE.Color('black') // Цвет по умолчанию
-  //       }
+        // Определите цвет в зависимости от направления
+        let color
+        if (edge.direction === 'AtoB') {
+          color = new THREE.Color('blue') // Цвет для направления от A к B
+        } else if (edge.direction === 'BtoA') {
+          color = new THREE.Color('red') // Цвет для направления от B к A
+        } else {
+          color = new THREE.Color('black') // Цвет по умолчанию
+        }
 
-  //       const material = new THREE.MeshBasicMaterial({
-  //         color: color,
-  //         side: THREE.DoubleSide,
-  //       })
+        const material = new THREE.MeshBasicMaterial({
+          color: color,
+          side: THREE.DoubleSide,
+        })
 
-  //       const tube = new THREE.Mesh(geometry, material)
+        const tube = new THREE.Mesh(geometry, material)
 
-  //       sceneRef.current.add(tube)
-  //     })
-  //   }
-  // }, [edgesRef.current])
+        sceneRef.current.add(tube)
+      })
+    }
+  }, [edgesRef.current])
   return (
     <group ref={sceneRef}>
       {cars.map((car, index) => (
@@ -954,8 +955,9 @@ const App = () => {
         <CameraControls
           minPolarAngle={Math.PI / 5}
           maxPolarAngle={Math.PI / 2.3}
-          minDistance={2}
-          maxDistance={15}
+          minDistance={3}
+          distance={30}
+          maxDistance={60}
         />
         <ambientLight intensity={1} />
         <hemisphereLight
