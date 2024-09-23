@@ -98,7 +98,7 @@ export class Car extends MeshLOD {
               <meshBasicMaterial wireframe />
             </Box>
             <Box
-              visible={this.debug}
+              visible={false}
               ref={this.visualColiderRef}
               args={this.visualColider.args}
               position={this.visualColider.position}
@@ -178,11 +178,10 @@ export class Car extends MeshLOD {
         if (this.lastPoint) {
           const point = this.navigator.getRandomEdgePoint().pointA
           this.curve = this.navigator.generateRoute(
-            { x: this.lastPoint.x, y: this.lastPoint.y },
-            { x: point.x, y: point.z }
+            { x: this.lastPoint.x, y: this.lastPoint.z },
+            { x: point.xW, y: point.yW }
           ).curve
         } else {
-          console.log(this.lastPoint)
           this.curve = this.navigator.generateRandomRoute().curve
         }
       }
@@ -192,20 +191,14 @@ export class Car extends MeshLOD {
       const distancePerFrame = this.speed * deltaTime
       const newProgress =
         this.speed == 0
-          ? 0
+          ? this.progress
           : this.progress + distancePerFrame / this.curve.getLength()
-
+      if (this.speed == 0) return
       // Если достигли конца кривой, вернемся к началу
       if (newProgress >= 1) {
         this.progress = 0
-        const point = this.navigator.getRandomEdgePoint().pointA
         this.lastPoint = this.curve.getPoint(1)
-
-        console.log(this.lastPoint)
-        this.curve = this.navigator.generateRoute(
-          { x: this.lastPoint.x, y: this.lastPoint.y },
-          { x: point.x, y: point.z }
-        ).curve
+        this.curve = undefined
       } else {
         this.progress = newProgress
       }
@@ -229,17 +222,18 @@ export class Car extends MeshLOD {
       // Устанавливаем позицию объекта по кривой
       if (this.ref.current && this.progress > 0) {
         const point = this.curve.getPoint(this.progress)
-        const nextPoint = this.curve.getPoint(this.progress + 0.001)
-
-        this.ref.current.lookAt(nextPoint)
+        if (this.progress != 1) {
+          const nextPoint = this.curve.getPoint(this.progress + 0.001)
+          this.ref.current.lookAt(nextPoint)
+        }
         this.ref.current.position.set(point.x, point.y, point.z)
         const numPoints = this.curve.points.length
         const progressRatio = this.progress * numPoints
         const threshold = Math.floor(progressRatio)
-        const oldCurve = this.curve.points.slice(0, threshold)
-        const newCurve = this.curve.points.slice(threshold)
-        updateCurveGeometry(this.curveRef.current, oldCurve)
-        updateCurveGeometry(this.curveRefOld.current, newCurve)
+        // const oldCurve = this.curve.points.slice(0, threshold)
+        // const newCurve = this.curve.points.slice(threshold)
+        // updateCurveGeometry(this.curveRef.current, oldCurve)
+        // updateCurveGeometry(this.curveRefOld.current, newCurve)
         for (let i = 0; i < this.wheels.length; i++) {
           if (i == 2) {
             // this.wheels[i].lodRef.current.rotation.y =

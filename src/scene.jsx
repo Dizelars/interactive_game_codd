@@ -19,9 +19,9 @@ export const Scene = ({ debug = false }) => {
   loader.textures.gradientTexture = useTexture([
     '/assets/gradient_texture.png',
   ]).gradientTexture
-  const navigator = new Navigator()
+  const navigator = new Navigator(debug)
 
-  for (let i = 0; i < 1; i++) {
+  for (let i = 0; i < 30; i++) {
     const speed = navigator.getRandomNum(1.1, 0.3)
     cars.push(new Car({ navigator, debug, speed: speed, maxSpeed: speed }))
   }
@@ -38,8 +38,8 @@ export const Scene = ({ debug = false }) => {
     10 - 🠟🠞
     11 - 🠞🠝
      */
-  const crossroads = 2
-  const roads = 3
+  const crossroads = 5
+  const roads = 5
   const rouder = (value) => {
     return Math.round(value * 1000) / 1000
   }
@@ -194,7 +194,7 @@ export const Scene = ({ debug = false }) => {
   let frameCounter = 0
   useFrame(() => {
     frameCounter++
-    if (frameCounter % 2 == 0) {
+    if (frameCounter % 1 == 0) {
       for (let i = 0; i < cars.length; i++) {
         for (let j = 0; j < cars.length; j++) {
           if (j == i) continue
@@ -210,9 +210,10 @@ export const Scene = ({ debug = false }) => {
             ) &&
             cars[i].curve
           ) {
-            cars[i].speed -= navigator.getRandomNum(0.11, 0.07)
-            if (cars[i].speed < cars[j].speed - 0.2)
-              cars[i].speed = cars[j].speed - 0.2
+            cars[i].speed -= navigator.getRandomNum(0.3, 0.2)
+            // if (cars[i].speed < cars[j].speed - 0.2)
+            //   cars[i].speed = cars[j].speed - 0.2
+            if (cars[i].speed < 0) cars[i].speed = 0
           } else {
             cars[i].speed += navigator.getRandomNum(0.012, 0.003)
             if (cars[i].speed > cars[i].maxSpeed)

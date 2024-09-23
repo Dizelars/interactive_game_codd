@@ -1,14 +1,20 @@
 import * as THREE from 'three'
 export class Navigator {
-  constructor() {
+  constructor(debug = false) {
     this.points = []
     this.graph = []
     this.edges = []
-    this.debug = false
+    this.debug = debug
   }
   getRandomEdgePoint() {
     const edges = this.edges.filter(
-      (edge) => edge.pointA.type && edge.pointA.type == 'road'
+      (edge) =>
+        edge.pointA.type &&
+        edge.pointA.type == 'road' &&
+        edge.pointB.type &&
+        edge.pointB.type == 'road' &&
+        (Math.abs(edge.pointA.x) == 0.51 || Math.abs(edge.pointA.y) == 0.51) &&
+        (Math.abs(edge.pointB.x) == 0.51 || Math.abs(edge.pointB.y) == 0.51)
     )
 
     return edges[Math.floor(this.getRandomNum(edges.length))]
@@ -93,7 +99,10 @@ export class Navigator {
             distance,
             pointA,
             pointB: connectedPoint,
-            // direction: 'AtoB',
+            direction:
+              pointA.type == 'turn' || connectedPoint.type == 'turn'
+                ? undefined
+                : 'AtoB',
           })
           if (connectedPoint.connections.length > 0)
             loadConnectedPoints(connectedPoint)
@@ -116,84 +125,7 @@ export class Navigator {
         return accumulator
       }, [])
     }
-    const updateDirections = (lines, startLine, direction) => {
-      const stack = [startLine]
-      const visitedEdges = new Set()
-      const visitedPoints = new Set()
 
-      while (stack.length > 0) {
-        const currentLine = stack.pop()
-
-        if (visitedEdges.has(currentLine)) continue
-        visitedEdges.add(currentLine)
-
-        // Обновляем направление для текущего ребра
-        if (!currentLine.direction) {
-          currentLine.direction = direction
-          lines[currentLine.index] = currentLine // Обновляем в исходном массиве
-        }
-
-        // Определяем точку, в которую нужно искать соседей
-        const searchPoint =
-          direction === 'AtoB' ? currentLine.pointB : currentLine.pointA
-
-        // Получаем соседние рёбра
-        const neighbors = lines.filter(
-          (line) =>
-            (line.pointA === searchPoint &&
-              line.pointB !==
-                (direction === 'AtoB'
-                  ? currentLine.pointA
-                  : currentLine.pointB)) ||
-            (line.pointB === searchPoint &&
-              line.pointA !==
-                (direction === 'AtoB'
-                  ? currentLine.pointB
-                  : currentLine.pointA))
-        )
-
-        // Добавляем соседние рёбра в стек для последующей обработки
-        neighbors.forEach((neighbor) => {
-          if (!visitedEdges.has(neighbor)) {
-            stack.push(neighbor)
-          }
-        })
-      }
-    }
-    const processLines = (lines) => {
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        const { pointA, pointB, twoWay } = line
-
-        if (pointA.direction || pointB.direction || twoWay) {
-          let initialDirection = null
-
-          if (pointA.direction === true) {
-            initialDirection = 'AtoB'
-          } else if (pointB.direction === true) {
-            initialDirection = 'BtoA'
-          }
-
-          if (initialDirection) {
-            // Обновляем направления по линии
-            updateDirections(lines, line, initialDirection)
-
-            // Если линия двухсторонняя, обновляем направление и в обратную сторону
-            if (twoWay) {
-              updateDirections(
-                lines,
-                line,
-                initialDirection === 'AtoB' ? 'BtoA' : 'AtoB'
-              )
-            }
-          } else if (twoWay) {
-            // Если нет начального направления, но есть twoWay, обрабатываем обе стороны
-            updateDirections(lines, line, 'AtoB')
-            updateDirections(lines, line, 'BtoA')
-          }
-        }
-      }
-    }
     const buildGraph = (lines) => {
       const graph = new Map()
 
@@ -276,8 +208,47 @@ export class Navigator {
     buildLines()
     lines = removeDublicates(lines)
     buildLinesWithConnections()
-
-    processLines(lines)
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (
+        (line.pointA.direction == false || line.pointB.direction == false) &&
+        line.pointB.type == 'road'
+      ) {
+        const neighbors = [line]
+        const findNeighbors = (vertex) => {
+          const finded = lines.filter(
+            (neighbor) =>
+              neighbor.indexA != vertex.indexA &&
+              neighbor.indexB != vertex.indexB &&
+              (neighbor.indexA == vertex.indexB ||
+                neighbor.indexB == vertex.indexB)
+          )
+          neighbors.push(...finded)
+          if (finded.length == 1) {
+            if (
+              finded[0].pointA.direction == true ||
+              finded[0].pointB.direction == true
+            )
+              return
+          }
+          finded.forEach((item) => findNeighbors(item))
+        }
+        findNeighbors(line)
+        neighbors.forEach((neighbor) => {
+          neighbor.direction = 'AtoB'
+        })
+      } else if (!line.direction && !line.twoWay) {
+        if (
+          line.pointA.twoWay ||
+          line.pointB.twoWay ||
+          (line.pointA.direction && line.pointB.direction)
+        ) {
+          line.twoWay = true
+        } else {
+          line.direction = 'BtoA'
+        }
+      }
+    }
     lines = removeDublicates(lines)
 
     this.edges = [...lines]
