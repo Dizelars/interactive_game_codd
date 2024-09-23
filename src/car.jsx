@@ -23,7 +23,7 @@ export class Car extends MeshLOD {
       position: [0, 0.15, 0],
     },
     actionColider = {
-      args: [0.15, 0.2, 0.1],
+      args: [0.13, 0.28, 0.28],
       position: [-0.38, 0.15, 0],
     },
     visualColider = {
@@ -70,10 +70,10 @@ export class Car extends MeshLOD {
       }
     }, [this.actionColiderRef.current, this.interactionColiderRef.current])
     return (
-      <>
+      <group
+        key={`car-${key}`}>
         <group
           ref={this.ref}
-          key={`car-${key}`}
           visible={this.isVisible}
           position={[this.coordinates.x, 0, this.coordinates.y]}
         >
@@ -87,7 +87,7 @@ export class Car extends MeshLOD {
               position={this.interactionColider.position}
               onClick={() => console.log('Клик по машине')}
             >
-              <meshBasicMaterial wireframe />
+              <meshBasicMaterial color={'red'} wireframe />
             </Box>
             <Box
               visible={this.debug}
@@ -95,7 +95,7 @@ export class Car extends MeshLOD {
               args={this.actionColider.args}
               position={this.actionColider.position}
             >
-              <meshBasicMaterial wireframe />
+              <meshBasicMaterial color={'red'} wireframe />
             </Box>
             <Box
               visible={false}
@@ -103,7 +103,7 @@ export class Car extends MeshLOD {
               args={this.visualColider.args}
               position={this.visualColider.position}
             >
-              <meshBasicMaterial wireframe />
+              <meshBasicMaterial color={'red'} wireframe />
             </Box>
             {this.setupLights()}
           </group>
@@ -116,7 +116,7 @@ export class Car extends MeshLOD {
           <bufferGeometry />
           <meshStandardMaterial color={'#003180'} />
         </mesh>
-      </>
+      </group>
     )
   }
   setupLights() {

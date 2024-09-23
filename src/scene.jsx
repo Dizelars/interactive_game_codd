@@ -15,30 +15,19 @@ export const Scene = ({ debug = false }) => {
   const cars = []
   const grid = []
   const cameraRef = useRef()
+  const cameraControlsRef = useRef()
   let edgesRef = useRef([])
   loader.textures.gradientTexture = useTexture([
     '/assets/gradient_texture.png',
   ]).gradientTexture
-  const navigator = new Navigator(debug)
+  const navigator = new Navigator()
 
   for (let i = 0; i < 30; i++) {
-    const speed = navigator.getRandomNum(1.1, 0.3)
+    const speed = 1
+    // const speed = navigator.getRandomNum(1.1, 0.3)
     cars.push(new Car({ navigator, debug, speed: speed, maxSpeed: speed }))
   }
-  /*
-    0  - кусочек дороги
-    1  - кусочек дороги 90 градусов
-    3  - перекресток со всеми поворотами
-    4  - т вправо
-    5  - т вверх
-    6  - т влево
-    7  - т вниз
-    8  - 🠝🠜
-    9  - 🠜🠟
-    10 - 🠟🠞
-    11 - 🠞🠝
-     */
-  const crossroads = 5
+  const crossroads = 3
   const roads = 5
   const rouder = (value) => {
     return Math.round(value * 1000) / 1000
@@ -153,7 +142,6 @@ export const Scene = ({ debug = false }) => {
 
   useEffect(() => {
     edgesRef.current = []
-
     for (let i = 0; i < grid.length; i++) {
       navigator.points.push(...grid[i].points)
     }
@@ -174,10 +162,12 @@ export const Scene = ({ debug = false }) => {
             new THREE.Vector3(edge.pointB.xW, 0, edge.pointB.yW),
           ])
           const geometry = new THREE.TubeGeometry(path, 1, 0.02, 3, false)
-          let color
-          if (edge.direction === 'AtoB') color = new THREE.Color('blue')
-          else if (edge.direction === 'BtoA') color = new THREE.Color('red')
-          else color = new THREE.Color('black')
+          // let color
+          // if (edge.direction === 'AtoB') color = new THREE.Color('blue')
+          // else if (edge.direction === 'BtoA') color = new THREE.Color('red')
+          // else color = new THREE.Color('black')
+
+          const color = new THREE.Color('blue')
 
           const material = new THREE.MeshBasicMaterial({
             color: color,
@@ -194,7 +184,14 @@ export const Scene = ({ debug = false }) => {
   let frameCounter = 0
   useFrame(() => {
     frameCounter++
-    if (frameCounter % 1 == 0) {
+    if (frameCounter == 1) {
+      const position = 1.82 * 2 + 0.7 * (roads - 1)
+      cameraControlsRef.current.setTarget(position, 0, position)
+      cameraControlsRef.current.setPosition(position, 0, position + 1)
+      cameraControlsRef.current.polarAngle = Math.PI / 3.5
+      cameraControlsRef.current.distance = 5
+    }
+    if (frameCounter % 2 == 0) {
       for (let i = 0; i < cars.length; i++) {
         for (let j = 0; j < cars.length; j++) {
           if (j == i) continue
@@ -215,7 +212,7 @@ export const Scene = ({ debug = false }) => {
             //   cars[i].speed = cars[j].speed - 0.2
             if (cars[i].speed < 0) cars[i].speed = 0
           } else {
-            cars[i].speed += navigator.getRandomNum(0.012, 0.003)
+            cars[i].speed += navigator.getRandomNum(0.008, 0.003)
             if (cars[i].speed > cars[i].maxSpeed)
               cars[i].speed = cars[i].maxSpeed
           }
@@ -227,37 +224,16 @@ export const Scene = ({ debug = false }) => {
   return (
     <group ref={sceneRef}>
       <CameraControls
-        polarAngle={Math.PI / 3.5}
-        distance={5}
+        ref={cameraControlsRef}
         verticalDragToForward={true}
         minPolarAngle={Math.PI / 3.5}
         maxPolarAngle={Math.PI / 3.5}
         minDistance={2}
         maxDistance={25}
-        // setTarget={[
-        //   ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-        //   0,
-        //   ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-        // ]}
-        // position={[
-        //   ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-        //   0,
-        //   ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-        // ]}
       />
-      {/* [
-            ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-            0,
-            ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-          ] */}
       <PerspectiveCamera
         ref={cameraRef}
         makeDefault
-        // position={[
-        //   ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-        //   0,
-        //   ((1.82 * 2 + 0.7 * (roads - 1)) * crossroads) / 4,
-        // ]}
       />
       {cars.map((car, index) => car.create(index))}
       {grid.map((road, index) => road.create(index))}

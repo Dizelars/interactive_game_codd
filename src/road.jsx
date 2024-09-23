@@ -10,6 +10,7 @@ class Road extends MeshLOD {
     gltfURL = '/Roads/CrossroadX',
     debug = false,
     distances = [20, 30, 40, 50],
+    slot = ''
   }) {
     super({ rotation, gltfURL, distances })
     this.coordinates = {
@@ -19,6 +20,7 @@ class Road extends MeshLOD {
     this.points = points
     this.blocked = blocked
     this.debug = debug
+    this.slot = slot
   }
   create(key) {
     for (let i = 0; i < this.points.length; i++) {
@@ -37,6 +39,7 @@ class Road extends MeshLOD {
       >
         {this.LOD()}
         {this.showDebug()}
+        {this.slot}
       </group>
     )
   }
